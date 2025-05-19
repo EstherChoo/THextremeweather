@@ -1,0 +1,128 @@
+---
+title: "cleanscriptTH"
+author: "janhavi+esther"
+output: html_document
+---
+
+##load required packages
+```{r}
+library(striprtf)
+library(tidyverse)
+library(dplyr)
+```
+
+##setup
+```{r setup}
+folder <- "/Users/estherchoo/Library/CloudStorage/OneDrive-NanyangTechnologicalUniversity/TH_extr_weat"
+setwd(folder)
+path <- "/data"
+out <- "./data"
+```
+
+##2. Get monthly deaths and monthly cases (clean case raw)
+```{r}
+for(n in (66-20):66){
+  url <- paste0("http://doe.moph.go.th/surdata/y", n, "/mcd_Melioidosis_", n, ".rtf")
+  download.file(url, paste0(folder,"/data/melioid_prov/melioid", n+1957, ".rtf"))
+}
+
+for(n in (66-20):66){
+  url <- paste0("http://doe.moph.go.th/surdata/y", n, "/mcd_Lepto_", n, ".rtf")
+  download.file(url, paste0(folder,"/data/lepto_prov/lepto", n+1957, ".rtf"))
+}
+
+for(n in (66-20):66){
+  url <- paste0("http://doe.moph.go.th/surdata/y", n, "/mcd_Malaria_", n, ".rtf")
+  download.file(url, paste0(folder,"/data/malaria_prov/mal", n+1957, ".rtf"))
+}
+
+
+disease <- "/malaria_prov" #change this (either lepto or melioid) before running
+filedisease <- "mal"
+
+year <- 2003
+
+files <- list.files(paste0(folder, path, disease))
+bigdf.cases <- data.frame()
+
+for (rtf in files){
+  txt <- read_rtf(paste0(folder, path, disease, type, "/", rtf))
+  
+  #remove the subtotals and titles
+  if(length(grep("Zone", txt, ignore.case=T)) != 0){
+    txt <- txt[-grep("Zone", txt, ignore.case=T)]
+  }
+  
+  if(length(grep("Region", txt, ignore.case=T)) != 0){
+    txt <- txt[-grep("Region", txt, ignore.case=T)]
+  }
+  
+  #cleaning
+  split_txt <- strsplit(txt, "\t")
+  
+  #remove unnecessary info
+  split_txt <- unique(split_txt)
+  split_txt <- split_txt[-length(split_txt)]
+  split_txt <- split_txt[-1]
+  split_txt <- split_txt[-1]
+  
+  #make into dataframe and change row/col names
+  split_txt[[1]] <- c("", "Month", "Total", "Total", 1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12)
+  split_txt[[2]] <- c("", "Type", rep(c("cases", "death"),13))
+  split_txt <- split_txt[lengths(split_txt)==28]
+  df <- as.data.frame(split_txt, stringsAsFactors = F)
+  df <- df[-1,]
+  colnames(df) <- df[1,]
+  df <- df[-c(1:3),]
+  
+  
+  df.cases <- df[df["Type"]=="cases",]
+  df.cases$Type <- NULL
+  df.cases <- pivot_longer(df.cases, c(2:ncol(df.cases)),names_to="Province", values_to="Cases")
+  df.cases <- df.cases[order(df.cases$Province), ]
+  df.cases <- cbind(Year=year, df.cases)
+  
+  bigdf.cases <- rbind(bigdf.cases, df.cases)
+  
+  year <- year+1
+}
+
+bigdf.cases <- bigdf.cases %>%
+              mutate(Year =  factor(as.numeric(Year))) %>%
+              mutate(Month = factor(as.numeric(Month))) %>%
+              mutate(Province = factor(Province)) %>%
+              arrange(Year, Month)
+
+BKdf <- filter(bigdf.cases, Province == "Bungkan")
+OriNK <- filter(bigdf.cases, Province == "Nong Khai")
+
+y <- 0
+m <- 0
+for (i in 1:nrow(bigdf.cases)) {
+  if(bigdf.cases[i,3] == "Bungkan"){
+    y = as.numeric(bigdf.cases[i,1])
+    m = as.numeric(bigdf.cases[i,2])
+    c4 = as.numeric(bigdf.cases[i,4])
+  }
+  if(y!=0 & m!= 0 & bigdf.cases[i,3] == "Nong Khai"){
+    if(as.numeric(bigdf.cases[i,1]) == y & as.numeric(bigdf.cases[i,2]) == m){
+      bigdf.cases[i,4] <- as.numeric(bigdf.cases[i,4]) + c4
+    }
+  }
+}
+
+mutatedNK <- filter(bigdf.cases, Province == "Nong Khai")
+bigdf.cases <- filter(bigdf.cases, Province != "Bungkan")
+
+bigdf.cases <- bigdf.cases %>%
+  arrange(Year, Province)
+
+count(bigdf.cases, Province)
+count(bigdf.cases, Year)
+```
+
+##export
+```{r}
+write.csv(bigdf.cases, file=paste0(folder,"/data/malaria_cases.csv"),row.names=F)
+```
+
